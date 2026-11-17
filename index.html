@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Mapa interactivo de las 1.271 parroquias y 67 concellos de la provincia de Lugo con los límites oficiales de la Xunta de Galicia.">
+<meta name="theme-color" content="#1f6feb">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231f6feb'/%3E%3Cpath d='M14 46 L22 18 L34 26 L50 14 L46 40 L30 50 Z' fill='%23ffca3a' stroke='white' stroke-width='3' stroke-linejoin='round'/%3E%3Cpath d='M22 18 L30 50 M34 26 L30 50' stroke='white' stroke-width='2.5'/%3E%3C/svg%3E">
+<title>Mapa de parroquias y concellos · Provincia de Lugo</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root { --acc: #1f6feb; --line: #e4e6ea; --muted: #667085; --bg: #ffffff; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #1d2433; }
+  #map { position: absolute; inset: 0 0 0 360px; background: #dfe3e8; }
+  #side {
+    position: absolute; top: 0; left: 0; bottom: 0; width: 360px; background: var(--bg); z-index: 1000;
+    display: flex; flex-direction: column; border-right: 1px solid var(--line); box-shadow: 2px 0 10px rgba(0,0,0,.08);
+  }
+  #side.closed { transform: translateX(-100%); }
+  #side.closed + #map { left: 0; }
+  #openSide { position: absolute; top: 10px; left: 10px; z-index: 999; display: none; }
+  #side.closed ~ #openSide { display: block; }
+  .top { padding: 12px 14px 10px; border-bottom: 1px solid var(--line); }
+  .top h1 { font-size: 16px; margin: 0 0 2px; display: flex; align-items: center; gap: 8px; }
+  .top h1 span { flex: 1; }
+  .sub { font-size: 12px; color: var(--muted); }
+  .iconbtn { border: 1px solid var(--line); background: #fff; border-radius: 8px; width: 30px; height: 30px; cursor: pointer; font-size: 15px; line-height: 1; }
+  .iconbtn:hover { background: #f3f5f8; }
+  #searchBox { position: relative; margin-top: 10px; }
+  #q { width: 100%; padding: 9px 34px 9px 34px; border: 1px solid #cfd4dc; border-radius: 10px; font-size: 14px; outline: none; }
+  #q:focus { border-color: var(--acc); box-shadow: 0 0 0 3px rgba(31,111,235,.15); }
+  #searchBox .ico { position: absolute; left: 11px; top: 9px; color: #98a2b3; font-size: 15px; pointer-events: none; }
+  #qClear { position: absolute; right: 6px; top: 6px; border: 0; background: none; font-size: 16px; color: #98a2b3; cursor: pointer; display: none; }
+  #results { position: absolute; left: 0; right: 0; top: 42px; background: #fff; border: 1px solid #cfd4dc; border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.15); max-height: 60vh; overflow: auto; display: none; z-index: 5; }
+  #results .r { padding: 7px 10px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; border-bottom: 1px solid #f1f2f4; }
+  #results .r:last-child { border-bottom: 0; }
+  #results .r.on, #results .r:hover { background: #eef4ff; }
+  #results .t { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; padding: 2px 5px; border-radius: 4px; flex: none; }
+  #results .t.p { background: #fff1e0; color: #b45309; } #results .t.c { background: #e7f0ff; color: #1d4ed8; }
+  #results .n { font-size: 13.5px; } #results .d { font-size: 12px; color: var(--muted); margin-left: auto; white-space: nowrap; }
+  #results mark { background: #ffe58a; padding: 0; }
+  #results .none { padding: 10px; color: var(--muted); font-size: 13px; }
+  .scroll { flex: 1; overflow: auto; }
+  section { border-bottom: 1px solid var(--line); }
+  section > h3 { margin: 0; padding: 10px 14px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; user-select: none; }
+  section > h3::before { content: "▾"; color: #98a2b3; width: 12px; }
+  section.fold > h3::before { content: "▸"; }
+  section.fold > .in { display: none; }
+  section > h3 small { margin-left: auto; font-weight: 500; color: var(--muted); }
+  .in { padding: 0 14px 12px; font-size: 13px; }
+  .seg { display: flex; background: #f1f3f6; border-radius: 9px; padding: 3px; gap: 3px; }
+  .seg button { flex: 1; border: 0; background: transparent; padding: 7px 4px; border-radius: 7px; cursor: pointer; font-size: 12.5px; color: #344054; }
+  .seg button.on { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.15); font-weight: 600; color: #111; }
+  .lab { display: flex; justify-content: space-between; margin: 10px 0 2px; color: #344054; }
+  input[type=range] { width: 100%; accent-color: var(--acc); }
+  .chk { display: flex; align-items: center; gap: 7px; margin-top: 8px; cursor: pointer; }
+  .legend { margin-top: 10px; font-size: 12px; }
+  .legend .row { display: flex; align-items: center; gap: 7px; margin: 2px 0; }
+  .legend i { width: 22px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,.2); flex: none; }
+  .legend .hint { color: var(--muted); margin-bottom: 4px; }
+  .cbar { display: flex; gap: 6px; margin-bottom: 8px; }
+  .cbar input { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid #cfd4dc; border-radius: 8px; font-size: 13px; }
+  .btn { border: 1px solid #cfd4dc; background: #fff; border-radius: 8px; padding: 6px 10px; cursor: pointer; font-size: 12.5px; white-space: nowrap; }
+  .btn:hover { background: #f3f5f8; }
+  .btn.pri { background: var(--acc); color: #fff; border-color: var(--acc); }
+  .btn.pri:hover { background: #195fd0; }
+  .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  #concList { margin-top: 8px; border: 1px solid var(--line); border-radius: 9px; max-height: 340px; overflow: auto; }
+  #concList .c { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-bottom: 1px solid #f3f4f6; }
+  #concList .c:last-child { border-bottom: 0; }
+  #concList .c:hover { background: #f8fafc; }
+  #concList label { flex: 1; display: flex; gap: 7px; align-items: center; cursor: pointer; min-width: 0; }
+  #concList .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #concList .cnt { color: var(--muted); font-size: 11.5px; }
+  #concList .go { border: 0; background: none; cursor: pointer; color: var(--acc); font-size: 12px; padding: 2px 4px; }
+  #concList .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .muted { color: var(--muted); font-size: 12px; line-height: 1.45; }
+  .muted b { color: #344054; }
+  #status { margin: 10px 14px 0; padding: 8px 10px; border-radius: 9px; font-size: 12.5px; background: #fff7e6; color: #8a5300; }
+  #status.ok { background: #ecfdf3; color: #067647; }
+  #status.err { background: #fef3f2; color: #b42318; }
+  #status a { color: inherit; font-weight: 700; }
+  #bar { height: 4px; background: #f1f3f6; border-radius: 3px; margin-top: 6px; overflow: hidden; }
+  #bar i { display: block; height: 100%; width: 0; background: var(--acc); transition: width .2s; }
+  .plabel div, .clabel div {
+    transform: translate(-50%, -50%); white-space: nowrap; pointer-events: none; text-align: center; line-height: 1.1;
+    color: #fff; font-weight: 700; text-shadow: 0 0 3px #000, 0 0 3px #000, 0 0 2px #000;
+  }
+  .plabel div { font-size: 12px; }
+  .plabel small { display: block; font-weight: 500; font-size: 10px; opacity: .95; }
+  .clabel div { font-size: 13px; text-transform: uppercase; letter-spacing: .4px; }
+  .clabel.big div { font-size: 16px; }
+  .roads .plabel div, .roads .clabel div { color: #1d2433; text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 0 2px #fff; }
+  .leaflet-tooltip.tip { font-size: 12.5px; padding: 4px 8px; }
+  .pop h4 { margin: 0 0 2px; font-size: 15px; }
+  .pop .adv { color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
+  .pop table { border-collapse: collapse; font-size: 12.5px; }
+  .pop td { padding: 2px 10px 2px 0; vertical-align: top; } .pop td:first-child { color: var(--muted); }
+  .pop .btns { margin-top: 8px; }
+  .leaflet-popup-content { margin: 12px 14px; }
+  #basemap { position: absolute; z-index: 999; right: 10px; top: 10px; }
+  #basemap .seg { background: rgba(255,255,255,.95); box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+  #basemap .seg button { padding: 7px 12px; font-size: 13px; }
+  .handle { display: none; }
+  input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+  .leaflet-control-attribution { font-size: 10px; }
+  #help { position: fixed; inset: 0; background: rgba(15,23,42,.55); z-index: 3000; display: none; align-items: center; justify-content: center; padding: 16px; }
+  #help.on { display: flex; }
+  #help .card { background: #fff; border-radius: 14px; max-width: 440px; width: 100%; max-height: 90vh; overflow: auto; padding: 18px 18px 14px; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+  #help h2 { margin: 0 0 10px; font-size: 17px; }
+  #help ol { padding-left: 20px; margin: 0 0 12px; font-size: 14px; line-height: 1.5; }
+  #help li { margin-bottom: 6px; }
+  #help .note2 { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  @media (max-width: 760px) {
+    :root { --peek: 122px; }
+    #map, #side.closed + #map { inset: 0; }
+    #side, #side.closed { width: 100%; top: auto; bottom: 0; height: 80vh; height: 80dvh; border-right: 0; border-top: 1px solid var(--line);
+      border-radius: 16px 16px 0 0; box-shadow: 0 -4px 18px rgba(0,0,0,.18); z-index: 1100;
+      transform: translateY(calc(100% - var(--peek) - env(safe-area-inset-bottom))); transition: transform .25s ease; }
+    #side.open { transform: none; }
+    .handle { display: block; width: 44px; height: 5px; border-radius: 3px; background: #cfd4dc; margin: 0 auto 8px; }
+    .top { padding: 8px 14px 10px; cursor: pointer; }
+    .top h1 { font-size: 15px; }
+    .sub { display: none; }
+    #closeSide, #openSide { display: none !important; }
+    #searchBox { margin-top: 8px; }
+    #q { font-size: 16px; padding: 11px 36px; }
+    #results { max-height: 48vh; }
+    #results .r { padding: 10px; }
+    #status { position: fixed; left: 8px; right: 8px; top: 58px; margin: 0; z-index: 1500; box-shadow: 0 2px 10px rgba(0,0,0,.2); }
+    .leaflet-control-attribution { font-size: 9px; line-height: 1.25; max-width: 100vw; }
+    .leaflet-bottom { bottom: calc(var(--peek) + env(safe-area-inset-bottom)); }
+    .leaflet-control-zoom { display: none; }
+    #basemap { top: max(10px, env(safe-area-inset-top)); right: 8px; }
+    #basemap .seg button { padding: 8px 10px; font-size: 13px; }
+    section > h3 { padding: 13px 14px; font-size: 14px; }
+    .seg button { padding: 9px 4px; font-size: 13px; }
+    .chk { margin-top: 10px; font-size: 14px; } .chk input { width: 18px; height: 18px; }
+    #concList { max-height: none; }
+    #concList .c { padding: 7px 8px; }
+    #concList .go { padding: 7px 9px; font-size: 13px; }
+    .btn { padding: 9px 12px; font-size: 13.5px; }
+    .leaflet-popup-content { margin: 10px 12px; }
+    .pop .btn { padding: 8px 10px; }
+  }
+</style>
+</head>
+<body>
+<aside id="side">
+  <div class="top">
+    <div class="handle"></div>
+    <h1><span>Parroquias y concellos de Lugo</span><button class="iconbtn" id="helpBtn" title="Cómo se usa">?</button><button class="iconbtn" id="closeSide" title="Ocultar panel">⟨</button></h1>
+    <div class="sub">Límites oficiales de la Xunta de Galicia (IET) · 67 concellos · 1.271 parroquias</div>
+    <div id="searchBox">
+      <span class="ico">🔍</span>
+      <input id="q" type="search" placeholder="Buscar parroquia o concello…" autocomplete="off" spellcheck="false">
+      <button id="qClear" title="Borrar">✕</button>
+      <div id="results"></div>
+    </div>
+  </div>
+  <div id="status">Cargando límites oficiales…<div id="bar"><i></i></div></div>
+  <div class="scroll">
+    <section id="secColor">
+      <h3>Colores</h3>
+      <div class="in">
+        <div class="seg" id="colorMode">
+          <button data-m="parroquia" class="on" title="Cada parroquia con un color distinto al de sus vecinas">Por parroquia</button>
+          <button data-m="superficie" title="Naranja claro = pequeña, oscuro = grande">Por superficie</button>
+          <button data-m="concello" title="Un color por concello">Por concello</button>
+        </div>
+        <div class="lab"><span>Intensidad del color</span><b id="opV">55%</b></div>
+        <input id="op" type="range" min="0" max="100" value="55">
+        <label class="chk"><input type="checkbox" id="names" checked> Mostrar nombres en el mapa</label>
+        <div class="legend" id="legend"></div>
+      </div>
+    </section>
+    <section id="secConc">
+      <h3>Concellos visibles <small id="concCount"></small></h3>
+      <div class="in">
+        <div class="cbar"><input id="concFilter" type="search" placeholder="Filtrar la lista…"></div>
+        <div class="btns">
+          <button class="btn" id="allOn">Todos</button>
+          <button class="btn" id="allOff">Ninguno</button>
+          <button class="btn" id="fitVisible">Encuadrar visibles</button>
+        </div>
+        <div id="concList"></div>
+        <div class="muted" style="margin-top:6px">Marca o desmarca concellos. “Ir” centra el mapa en ese concello; “Solo” deja únicamente ese.</div>
+      </div>
+    </section>
+    <section id="secTools" class="fold">
+      <h3>Exportar</h3>
+      <div class="in">
+        <div class="btns"><button class="btn pri" id="kml">Descargar KML de los concellos visibles</button></div>
+        <div class="muted" style="margin-top:6px">El KML se abre en Google Earth o se importa en Google My Maps, con el máximo detalle oficial.</div>
+      </div>
+    </section>
+    <section id="secInfo" class="fold">
+      <h3>Fuentes y verificación</h3>
+      <div class="in muted">
+        <p><b>Límites:</b> Instituto de Estudos do Territorio (IET), Xunta de Galicia, servicio “Límites administrativos”, edición de febrero de 2026. Se descargan en directo al abrir el mapa; al acercarte se cargan a máximo detalle.</p>
+        <p><b>Contraste realizado (17/11/2026):</b></p>
+        <ul style="padding-left:18px;margin:4px 0">
+          <li>67 concellos y 1.271 parroquias: coinciden una a una, con el mismo nombre y advocación, con el Nomenclátor oficial de Galicia (Decreto 27/2026).</li>
+          <li>La suma de las parroquias de cada concello coincide con la superficie del concello (diferencia máxima 0,002 %).</li>
+          <li>Total provincial calculado: 9.862,6 km² (cifra oficial publicada: 9.856 km²; diferencia 0,07 % por el método de cálculo y la línea de costa).</li>
+          <li>Ejemplo: en Vilalba hay dos parroquias distintas con el nombre Lanzós: San Martiño (27,30 km²) y San Salvador (2,15 km², en dos trozos separados).</li>
+        </ul>
+        <p><b>Superficies:</b> calculadas sobre el elipsoide a partir del límite oficial a máximo detalle (al pulsar una parroquia).</p>
+        <p><b>Fondos:</b> ortofoto PNOA y Mapa Base del Instituto Geográfico Nacional (IGN), con licencia CC BY 4.0 (scne.es / ign.es).</p>
+        <p><b>Aviso:</b> proyecto personal y no oficial. No está hecho ni avalado por la Xunta de Galicia ni por el IGN; usa sus datos abiertos citando la fuente. Para trámites legales consulta siempre la fuente oficial.</p>
+        <p><b>Privacidad:</b> sin cookies ni seguimiento. Los límites se guardan solo en tu navegador para que el mapa abra más rápido.</p>
+        <div class="btns"><button class="btn" id="reload">Volver a descargar los datos oficiales</button></div>
+      </div>
+    </section>
+  </div>
+</aside>
+<div id="map"></div>
+<button class="iconbtn" id="openSide" title="Mostrar panel">☰</button>
+<div id="help"><div class="card">
+  <h2>Cómo se usa</h2>
+  <ol>
+    <li><b>Busca</b> una parroquia o un concello en la caja de búsqueda (no hace falta poner tildes) y toca el resultado.</li>
+    <li><b>Toca una parroquia</b> en el mapa para ver su ficha: concello, superficie exacta y tamaño respecto a las demás.</li>
+    <li>Cambia el fondo con <b>Satélite / Carreteras</b> (arriba a la derecha).</li>
+    <li>En <b>Colores</b> elige “Por parroquia”, “Por superficie” (naranja más oscuro = más grande) o “Por concello”.</li>
+    <li>En <b>Concellos visibles</b> marca solo los que quieras ver, o usa “Solo” para quedarte con uno.</li>
+  </ol>
+  <div class="note2">En el móvil, desliza o toca la barra de abajo para abrir y cerrar el panel. Datos oficiales de la Xunta de Galicia (IET) y del IGN. Proyecto no oficial.</div>
+  <button class="btn pri" id="helpClose" style="width:100%">Entendido</button>
+</div></div>
+<div id="basemap"><div class="seg" id="baseSeg"><button data-b="sat" class="on">🛰️ Satélite</button><button data-b="roads">🗺️ Carreteras</button></div></div>
+
+<script>
+'use strict';
+// =================== Configuración ===================
+const API = 'https://ideg.xunta.gal/servizos/rest/services/LimitesAdministrativos/LimitesAdministrativos/MapServer/';
+const L_PARR = 18, L_CONC = 12;
+const PROV = 'CODCONC>=27000 AND CODCONC<28000';
+const COARSE = '0.0001', FINE = '0.000005';   // grados: ~10 m para la vista general, ~0,5 m al acercar
+const DETAIL_ZOOM = 13;
+const CACHE_KEY = 'lugo-v1';
+const PAL = ['#ff595e', '#ffca3a', '#8ac926', '#1982c4', '#b15ee8', '#ff924c', '#2ec4b6', '#f15bb5'];
+const ORANGE = ['#fff1dc', '#ffdcae', '#ffc47d', '#ffa94d', '#f98a22', '#e66a0a', '#b84c05'];
+
+const $ = id => document.getElementById(id);
+const CAN_HOVER = matchMedia('(hover: hover) and (pointer: fine)').matches;
+const MOBILE = matchMedia('(max-width: 760px)');
+if (MOBILE.matches) document.body.appendChild(document.getElementById('status'));
+function sheet(open) { if (MOBILE.matches) $('side').classList.toggle('open', open); }
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+const fmtKm2 = (a, d = 2) => a.toLocaleString('es-ES', { minimumFractionDigits: d, maximumFractionDigits: d }) + ' km²';
+const debounce = (f, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => f(...a), ms); }; };
+
+// =================== Estado ===================
+const S = { mode: 'parroquia', opacity: 0.55, names: true, base: 'sat' };
+let parishes = [];                 // {id, conc, name, adv, full, geom, area, exact, pt, c8, cls, layer, detail}
+const concellos = new Map();       // code -> {code, name, capital, parishes:[], geom, layers, visible, c8, bounds, detail, loading}
+const byId = new Map();
+let selected = null, areaBreaks = [];
+
+function setStatus(html, cls, pct) {
+  const s = $('status');
+  s.className = cls || '';
+  s.innerHTML = html + (pct != null ? '<div id="bar"><i style="width:' + pct + '%"></i></div>' : '');
+  s.style.display = html ? '' : 'none';
+}
+
+// =================== Geometría ===================
+const RAD = Math.PI / 180, R = 6378137;
+function ringArea(r) { let s = 0; for (let i = 0; i < r.length - 1; i++) { const [a, b] = r[i], [c, d] = r[i + 1]; s += (c - a) * RAD * (2 + Math.sin(b * RAD) + Math.sin(d * RAD)); } return Math.abs(s * R * R / 2); }
+const polysOf = g => g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+function geomArea(g) { let A = 0; for (const p of polysOf(g)) p.forEach((r, i) => A += (i ? -1 : 1) * ringArea(r)); return A / 1e6; }
+function bboxOf(g) { let x0 = 180, y0 = 90, x1 = -180, y1 = -90; for (const p of polysOf(g)) for (const [x, y] of p[0]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } return [x0, y0, x1, y1]; }
+// punto interior para la etiqueta: el tramo horizontal más ancho dentro del polígono mayor
+function labelPoint(g) {
+  let best = null, bestA = -1;
+  for (const p of polysOf(g)) { const a = ringArea(p[0]); if (a > bestA) { bestA = a; best = p; } }
+  const [x0, y0, x1, y1] = bboxOf({ type: 'Polygon', coordinates: best });
+  let top = null, topW = -1;
+  for (let k = 1; k <= 9; k++) {
+    const y = y0 + (y1 - y0) * k / 10, xs = [];
+    for (const r of best) for (let i = 0; i < r.length - 1; i++) {
+      const [ax, ay] = r[i], [bx, by] = r[i + 1];
+      if ((ay > y) !== (by > y)) xs.push(ax + (y - ay) * (bx - ax) / (by - ay));
+    }
+    xs.sort((a, b) => a - b);
+    for (let i = 0; i + 1 < xs.length; i += 2) {
+      const w = (xs[i + 1] - xs[i]) * (1 - Math.abs(k - 5) * 0.06); // ligera preferencia por el centro
+      if (w > topW) { topW = w; top = [y, (xs[i] + xs[i + 1]) / 2]; }
+    }
+  }
+  return top || [(y0 + y1) / 2, (x0 + x1) / 2];
+}
+const toLatLngs = g => L.GeoJSON.coordsToLatLngs(g.coordinates, g.type === 'Polygon' ? 1 : 2);
+
+// vecinas por celdas compartidas (rápido y tolerante a la simplificación)
+function neighbours(items, getGeom, cell = 0.002) {
+  const grid = new Map(), nb = items.map(() => new Map());
+  items.forEach((it, i) => {
+    const seen = new Set();
+    for (const p of polysOf(getGeom(it))) for (const r of p) for (const [x, y] of r) {
+      const k = Math.floor(x / cell) + ':' + Math.floor(y / cell);
+      if (seen.has(k)) continue; seen.add(k);
+      let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(i);
+    }
+  });
+  for (const a of grid.values()) if (a.length > 1)
+    for (let i = 0; i < a.length; i++) for (let j = i + 1; j < a.length; j++) {
+      nb[a[i]].set(a[j], (nb[a[i]].get(a[j]) || 0) + 1); nb[a[j]].set(a[i], (nb[a[j]].get(a[i]) || 0) + 1);
+    }
+  return nb.map(m => [...m].filter(([, n]) => n >= 2).map(([j]) => j));
+}
+function greedyColor(nb, k = PAL.length) {
+  const order = nb.map((_, i) => i).sort((a, b) => nb[b].length - nb[a].length), col = new Array(nb.length).fill(-1);
+  for (const i of order) { const used = new Set(nb[i].map(j => col[j])); let c = 0; while (used.has(c) && c < k - 1) c++; col[i] = c; }
+  return col;
+}
+
+// =================== Datos (Xunta) ===================
+async function fetchJSON(url, tries = 3) {
+  let err;
+  for (let t = 0; t < tries; t++) {
+    try {
+      const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 45000);
+      const r = await fetch(url, { signal: ctl.signal }); clearTimeout(to);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json(); if (j.error) throw new Error(j.error.message || 'error del servidor');
+      return j;
+    } catch (e) { err = e; await new Promise(res => setTimeout(res, 1200 * (t + 1))); }
+  }
+  throw err;
+}
+const q = (layer, params) => API + layer + '/query?' + new URLSearchParams({ outSR: '4326', f: 'geojson', returnGeometry: 'true', ...params });
+
+async function downloadProvince(progress) {
+  const fields = 'CODCONC,CONCELLO,PARROQUIA,CODPARRO';
+  const offsets = [0, 320, 640, 960];
+  let done = 0; const tick = () => progress(++done / (offsets.length + 1));
+  const pages = offsets.map(o => fetchJSON(q(L_PARR, { where: PROV, outFields: fields, geometryPrecision: '5', maxAllowableOffset: COARSE,
+    orderByFields: 'OBJECTID', resultOffset: o, resultRecordCount: 320 })).then(j => { tick(); return j.features; }));
+  const conc = fetchJSON(q(L_CONC, { where: PROV, outFields: 'CODCONC,NOMECAPITA', geometryPrecision: '5', maxAllowableOffset: COARSE }))
+    .then(j => { tick(); return j.features; });
+  const P = (await Promise.all(pages)).flat(), C = await conc;
+  const seen = new Set(), uniq = P.filter(f => !seen.has(f.properties.CODPARRO) && seen.add(f.properties.CODPARRO));
+  if (uniq.length < 1200 || C.length < 60) throw new Error('respuesta incompleta del servidor (' + uniq.length + ' parroquias)');
+  return { ts: Date.now(), parishes: uniq, concellos: C };
+}
+
+// caché local (IndexedDB) para que las siguientes aperturas sean instantáneas
+function idb() { return new Promise((res, rej) => { try { const r = indexedDB.open('mapa-lugo', 1); r.onupgradeneeded = () => r.result.createObjectStore('d'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } }); }
+async function cacheGet() { try { const db = await idb(); return await new Promise(res => { const t = db.transaction('d').objectStore('d').get(CACHE_KEY); t.onsuccess = () => res(t.result); t.onerror = () => res(null); }); } catch { return null; } }
+async function cachePut(v) { try { const db = await idb(); db.transaction('d', 'readwrite').objectStore('d').put(v, CACHE_KEY); } catch { } }
+async function cacheClear() { try { const db = await idb(); db.transaction('d', 'readwrite').objectStore('d').delete(CACHE_KEY); } catch { } }
+
+// =================== Mapa ===================
+const map = L.map('map', { zoomSnap: 0.5, zoomDelta: 0.5, minZoom: 7, maxZoom: 19, preferCanvas: true, zoomControl: false }).setView([43.0, -7.55], 9);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
+map.createPane('refPane').style.zIndex = 420; map.getPane('refPane').style.pointerEvents = 'none';
+map.createPane('linePane').style.zIndex = 430; map.getPane('linePane').style.pointerEvents = 'none';
+map.createPane('selPane').style.zIndex = 440; map.getPane('selPane').style.pointerEvents = 'none';
+const fillR = L.canvas({ padding: 0.4, tolerance: 1 });
+const lineR = L.canvas({ padding: 0.4, pane: 'linePane' });
+const selR = L.canvas({ padding: 0.4, pane: 'selPane' });
+
+const IGN = (svc, layer, fmt) => `https://www.ign.es/wmts/${svc}?request=GetTile&service=WMTS&VERSION=1.0.0&Layer=${layer}&Style=default&Format=${fmt}&TileMatrixSet=GoogleMapsCompatible&TileMatrix={z}&TileRow={y}&TileCol={x}`;
+const pnoa = L.tileLayer(IGN('pnoa-ma', 'OI.OrthoimageCoverage', 'image/jpeg'), { maxZoom: 19, maxNativeZoom: 19, attribution: 'PNOA CC BY 4.0 <a href="https://www.scne.es" target="_blank">scne.es</a>' });
+const ignOrtoLabels = L.tileLayer(IGN('ign-base', 'IGNBaseOrto', 'image/png'), { maxZoom: 19, pane: 'refPane', attribution: 'IGN CC BY 4.0 <a href="https://www.ign.es" target="_blank">ign.es</a>' });
+const ignBase = L.tileLayer(IGN('ign-base', 'IGNBaseTodo', 'image/png'), { maxZoom: 19, attribution: 'Mapa Base IGN CC BY 4.0 <a href="https://www.ign.es" target="_blank">ign.es</a>' });
+let pnoaErrors = 0, pnoaOk = 0;
+pnoa.on('tileload', () => pnoaOk++);
+pnoa.on('tileerror', () => { if (++pnoaErrors === 8 && !pnoaOk) setStatus('La ortofoto del IGN no responde ahora mismo. Prueba el fondo “Carreteras”.', 'err'); });
+map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank">Leaflet</a>');
+map.attributionControl.addAttribution('Límites IET-Xunta de Galicia CC BY 4.0');
+function setBase(b) {
+  S.base = b;
+  [pnoa, ignOrtoLabels, ignBase].forEach(l => map.removeLayer(l));
+  if (b === 'sat') { pnoa.addTo(map); ignOrtoLabels.addTo(map); } else ignBase.addTo(map);
+  map.getContainer().classList.toggle('roads', b === 'roads');
+  [...$('baseSeg').children].forEach(x => x.classList.toggle('on', x.dataset.b === b));
+  restyleAll();
+}
+setBase('sat');
+
+const labelLayer = L.layerGroup().addTo(map);
+let selLayer = null;
+
+// =================== Estilos ===================
+function fillColor(p) {
+  if (S.mode === 'parroquia') return PAL[p.c8];
+  if (S.mode === 'superficie') return ORANGE[p.cls];
+  return PAL[concellos.get(p.conc).c8];
+}
+function parishStyle(p) {
+  const z = map.getZoom(), roads = S.base === 'roads';
+  return {
+    renderer: fillR, color: roads ? '#ffffff' : '#ffffff', opacity: z < 10 ? 0.55 : 0.9, weight: z < 10 ? 0.6 : z < 12 ? 1.1 : 1.8,
+    fillColor: fillColor(p), fillOpacity: S.opacity
+  };
+}
+function restyleAll() { for (const p of parishes) if (p.layer) p.layer.setStyle(parishStyle(p)); for (const c of concellos.values()) styleConcello(c); renderLegend(); }
+function styleConcello(c) {
+  if (!c.layers) return;
+  const z = map.getZoom();
+  c.layers[0].setStyle({ weight: z < 10 ? 3 : 5, opacity: 0.6 });
+  c.layers[1].setStyle({ weight: z < 10 ? 1.4 : 2.4 });
+}
+
+function computeAreaClasses() {
+  const a = parishes.map(p => p.area).sort((x, y) => x - y), n = ORANGE.length;
+  areaBreaks = []; for (let i = 1; i < n; i++) areaBreaks.push(a[Math.floor(a.length * i / n)]);
+  for (const p of parishes) { let k = 0; while (k < areaBreaks.length && p.area >= areaBreaks[k]) k++; p.cls = k; }
+}
+function renderLegend() {
+  const el = $('legend');
+  if (S.mode === 'superficie') {
+    const fmt = v => v.toLocaleString('es-ES', { maximumFractionDigits: v < 10 ? 1 : 0 });
+    let h = '<div class="hint">Tamaño de la parroquia (cada tramo tiene el mismo número de parroquias):</div>';
+    ORANGE.forEach((c, i) => {
+      const lo = i ? areaBreaks[i - 1] : 0, hi = areaBreaks[i];
+      h += `<div class="row"><i style="background:${c}"></i>${i === 0 ? 'menos de ' + fmt(hi) : i === ORANGE.length - 1 ? 'más de ' + fmt(lo) : fmt(lo) + ' – ' + fmt(hi)} km²</div>`;
+    });
+    el.innerHTML = h;
+  } else if (S.mode === 'parroquia') {
+    el.innerHTML = '<div class="hint">Los colores solo sirven para distinguir cada parroquia de sus vecinas. Para ver tamaños, elige “Por superficie”.</div>';
+  } else el.innerHTML = '<div class="hint">Cada concello tiene un color distinto al de sus vecinos.</div>';
+}
+
+// =================== Construcción ===================
+function build(data) {
+  for (const c of concellos.values()) { c.group && map.removeLayer(c.group); c.lines && map.removeLayer(c.lines); }
+  concellos.clear(); byId.clear(); parishes = [];
+  const capitals = new Map(data.concellos.map(f => [f.properties.CODCONC, f]));
+  for (const f of data.parishes) {
+    const pr = f.properties, full = pr.PARROQUIA || '', m = full.match(/^(.*?)\s*\((.*)\)\s*$/);
+    const p = { id: pr.CODPARRO, conc: pr.CODCONC, concName: pr.CONCELLO, full, name: m ? m[1] : full, adv: m ? m[2] : '',
+      geom: f.geometry, area: geomArea(f.geometry), exact: null, detail: false };
+    p.pt = labelPoint(p.geom);
+    parishes.push(p); byId.set(p.id, p);
+    if (!concellos.has(p.conc)) concellos.set(p.conc, { code: p.conc, name: p.concName, parishes: [], visible: true, detail: false });
+    concellos.get(p.conc).parishes.push(p);
+  }
+  for (const c of concellos.values()) {
+    const cf = capitals.get(c.code);
+    c.capital = cf ? cf.properties.NOMECAPITA : '';
+    c.geom = cf ? cf.geometry : null;
+    c.area = c.parishes.reduce((s, p) => s + p.area, 0);
+    c.parishes.sort((a, b) => a.name.localeCompare(b.name, 'gl'));
+  }
+  // colores
+  const pc = greedyColor(neighbours(parishes, p => p.geom)); parishes.forEach((p, i) => p.c8 = pc[i]);
+  const cl = [...concellos.values()].filter(c => c.geom), cc = greedyColor(neighbours(cl, c => c.geom, 0.004)); cl.forEach((c, i) => c.c8 = cc[i]);
+  for (const c of concellos.values()) if (c.c8 == null) c.c8 = 0;
+  computeAreaClasses();
+  // capas
+  for (const c of concellos.values()) {
+    c.group = L.featureGroup();
+    for (const p of c.parishes) {
+      p.layer = L.polygon(toLatLngs(p.geom), parishStyle(p));
+      p.layer._p = p;
+      if (CAN_HOVER) p.layer.bindTooltip(() => `<b>${esc(p.name)}</b>${p.adv ? ' (' + esc(p.adv) + ')' : ''}<br><span style="color:#667085">${esc(c.name)}</span>`, { sticky: true, className: 'tip', direction: 'top', offset: [0, -8] });
+      p.layer.on('mouseover', () => { if (selected !== p) p.layer.setStyle({ weight: 3.5, color: '#00e5ff', fillOpacity: Math.min(1, S.opacity + 0.2) }); });
+      p.layer.on('mouseout', () => p.layer.setStyle(parishStyle(p)));
+      p.layer.on('click', e => selectParish(p, e.latlng));
+      c.group.addLayer(p.layer);
+    }
+    const g = c.geom || { type: 'MultiPolygon', coordinates: c.parishes.flatMap(p => polysOf(p.geom)) };
+    c.bounds = L.latLngBounds(toLatLngs({ type: 'MultiPolygon', coordinates: polysOf(g) }).flat(2));
+    c.layers = [
+      L.polygon(toLatLngs(g), { renderer: lineR, color: '#000', weight: 5, opacity: 0.6, fill: false, interactive: false }),
+      L.polygon(toLatLngs(g), { renderer: lineR, color: '#ffffff', weight: 2.4, opacity: 1, fill: false, interactive: false, dashArray: '9 6' })
+    ];
+    c.lines = L.layerGroup(c.layers);
+    c.pt = (() => { const cap = c.parishes.find(p => norm(p.name) === norm(c.name)); return c.geom ? labelPoint(c.geom) : cap ? cap.pt : c.parishes[0].pt; })();
+  }
+  applyVisibility();
+  buildConcList();
+  buildSearchIndex();
+  renderLegend();
+  updateLabels();
+}
+
+function applyVisibility() {
+  for (const c of concellos.values()) {
+    if (c.visible) { c.group.addTo(map); c.lines.addTo(map); } else { map.removeLayer(c.group); map.removeLayer(c.lines); }
+  }
+  const n = [...concellos.values()].filter(c => c.visible).length;
+  $('concCount').textContent = `${n} de ${concellos.size}`;
+  if (selected && !concellos.get(selected.conc).visible) clearSelection();
+  updateLabels(); maybeLoadDetail();
+}
+
+// =================== Etiquetas dinámicas ===================
+const updateLabels = debounce(() => {
+  labelLayer.clearLayers();
+  if (!S.names || !parishes.length) return;
+  const z = map.getZoom(), b = map.getBounds().pad(0.05), placed = [];
+  // coloca etiquetas sin que se pisen (primero las de mayor superficie)
+  const tryPlace = (latlng, text, sub, cls, fs) => {
+    const pt = map.latLngToContainerPoint(latlng), w = Math.max(text.length, sub ? sub.length * 0.85 : 0) * fs * 0.58 + 6, h = fs * (sub ? 2.3 : 1.3);
+    const box = [pt.x - w / 2, pt.y - h / 2, pt.x + w / 2, pt.y + h / 2];
+    if (placed.some(o => box[0] < o[2] && box[2] > o[0] && box[1] < o[3] && box[3] > o[1])) return;
+    placed.push(box);
+    L.marker(latlng, { interactive: false, keyboard: false, icon: L.divIcon({ className: cls, iconSize: null,
+      html: `<div>${esc(text)}${sub ? `<small>${esc(sub)}</small>` : ''}</div>` }) }).addTo(labelLayer);
+  };
+  if (z < 11) {
+    if (z < 8) return;
+    const big = z >= 10;
+    [...concellos.values()].filter(c => c.visible && b.contains(c.pt)).sort((a, x) => x.area - a.area)
+      .forEach(c => tryPlace(c.pt, c.name.toUpperCase(), '', 'clabel' + (big ? ' big' : ''), big ? 16 : 13));
+    return;
+  }
+  parishes.filter(p => concellos.get(p.conc).visible && b.contains(p.pt)).sort((a, x) => x.area - a.area)
+    .forEach(p => tryPlace(p.pt, p.name, z >= 13 ? p.adv : '', 'plabel', 12));
+}, 120);
+
+// =================== Detalle máximo al acercar ===================
+const queue = [];
+let loadingDetail = 0;
+async function loadDetail(c) {
+  if (c.detail || c.loading) return c.loading;
+  c.loading = (async () => {
+    const [pj, cj] = await Promise.all([
+      fetchJSON(q(L_PARR, { where: 'CODCONC=' + c.code, outFields: 'CODPARRO', geometryPrecision: '6', maxAllowableOffset: FINE })),
+      fetchJSON(q(L_CONC, { where: 'CODCONC=' + c.code, outFields: 'CODCONC', geometryPrecision: '6', maxAllowableOffset: FINE }))
+    ]);
+    for (const f of pj.features) {
+      const p = byId.get(f.properties.CODPARRO); if (!p) continue;
+      p.geom = f.geometry; p.exact = geomArea(f.geometry); p.detail = true;
+      p.layer.setLatLngs(toLatLngs(f.geometry));
+    }
+    if (cj.features[0]) { c.geom = cj.features[0].geometry; c.layers.forEach(l => l.setLatLngs(toLatLngs(c.geom))); }
+    c.exact = c.parishes.reduce((s, p) => s + (p.exact ?? p.area), 0);
+    c.detail = true;
+    if (selected && selected.conc === c.code) { drawSelection(selected); refreshPopup(); }
+  })().catch(e => { c.loading = null; throw e; });
+  return c.loading;
+}
+const maybeLoadDetail = debounce(() => {
+  if (map.getZoom() < DETAIL_ZOOM) return;
+  const b = map.getBounds();
+  for (const c of concellos.values()) if (c.visible && !c.detail && !c.loading && c.bounds.intersects(b)) loadDetail(c).catch(() => { });
+}, 250);
+
+// =================== Selección y fichas ===================
+function clearSelection() { selected = null; if (selLayer) { map.removeLayer(selLayer); selLayer = null; } map.closePopup(); }
+function drawSelection(p) {
+  if (selLayer) map.removeLayer(selLayer);
+  selLayer = L.layerGroup([
+    L.polygon(toLatLngs(p.geom), { renderer: selR, color: '#000', weight: 7, opacity: 0.5, fill: false, interactive: false }),
+    L.polygon(toLatLngs(p.geom), { renderer: selR, color: '#ffe600', weight: 3.5, opacity: 1, fill: false, interactive: false })
+  ]).addTo(map);
+}
+let popup = null;
+function parishHTML(p) {
+  const c = concellos.get(p.conc);
+  const rank = [...c.parishes].sort((a, b) => (b.exact ?? b.area) - (a.exact ?? a.area)).indexOf(p) + 1;
+  const area = p.exact != null ? fmtKm2(p.exact) : `≈ ${fmtKm2(p.area, 1)} <span style="color:#98a2b3">(calculando exacta…)</span>`;
+  const parts = polysOf(p.geom).length;
+  return `<div class="pop"><h4>${esc(p.name)}</h4>${p.adv ? `<div class="adv">${esc(p.adv)}</div>` : ''}
+    <table><tr><td>Concello</td><td><b>${esc(c.name)}</b></td></tr>
+    <tr><td>Superficie</td><td><b>${area}</b></td></tr>
+    <tr><td>Tamaño</td><td>${rank}.ª de ${c.parishes.length} en ${esc(c.name)}</td></tr>
+    ${parts > 1 ? `<tr><td>Territorio</td><td>${parts} trozos separados</td></tr>` : ''}
+    <tr><td>Nombre oficial</td><td>${esc(p.full)}</td></tr>
+    <tr><td>Código</td><td>${p.id}</td></tr></table>
+    <div class="btns"><button class="btn" data-act="zoomp" data-id="${p.id}">Acercar</button><button class="btn" data-act="conc" data-c="${c.code}">Ver ficha del concello</button></div></div>`;
+}
+function concHTML(c) {
+  const area = c.exact != null ? fmtKm2(c.exact) : `≈ ${fmtKm2(c.area, 1)}`;
+  const big = [...c.parishes].sort((a, b) => (b.exact ?? b.area) - (a.exact ?? a.area));
+  return `<div class="pop"><h4>Concello de ${esc(c.name)}</h4>
+    <table><tr><td>Capital</td><td>${esc(c.capital || '—')}</td></tr>
+    <tr><td>Parroquias</td><td><b>${c.parishes.length}</b></td></tr>
+    <tr><td>Superficie</td><td><b>${area}</b></td></tr>
+    <tr><td>Mayor</td><td>${esc(big[0].name)}${big[0].adv ? ' (' + esc(big[0].adv) + ')' : ''}</td></tr>
+    <tr><td>Menor</td><td>${esc(big.at(-1).name)}${big.at(-1).adv ? ' (' + esc(big.at(-1).adv) + ')' : ''}</td></tr></table>
+    <div class="btns"><button class="btn" data-act="only" data-c="${c.code}">Ver solo este concello</button><button class="btn" data-act="fitc" data-c="${c.code}">Encuadrar</button></div></div>`;
+}
+let popupTarget = null;
+function openPopup(html, latlng, target) {
+  popupTarget = target;
+  popup = L.popup({ maxWidth: MOBILE.matches ? 270 : 320, autoPanPaddingTopLeft: [20, MOBILE.matches ? 70 : 30], autoPanPaddingBottomRight: [20, MOBILE.matches ? 150 : 30] }).setLatLng(latlng).setContent(html).openOn(map);
+}
+function refreshPopup() {
+  if (!popup || !map.hasLayer(popup) || !popupTarget) return;
+  popup.setContent(popupTarget.kind === 'p' ? parishHTML(popupTarget.obj) : concHTML(popupTarget.obj));
+}
+function selectParish(p, latlng, zoom) {
+  sheet(false);
+  const c = concellos.get(p.conc);
+  if (!c.visible) { c.visible = true; applyVisibility(); syncConcChecks(); }
+  selected = p; drawSelection(p);
+  if (zoom) map.fitBounds(p.layer.getBounds(), { padding: [60, 60], maxZoom: 15 });
+  openPopup(parishHTML(p), latlng || L.latLng(p.pt), { kind: 'p', obj: p });
+  loadDetail(c).then(refreshPopup).catch(() => { });
+}
+function showConcello(c, fit = true) {
+  sheet(false);
+  if (!c.visible) { c.visible = true; applyVisibility(); syncConcChecks(); }
+  clearSelection();
+  if (fit) map.fitBounds(c.bounds, { padding: [30, 30] });
+  openPopup(concHTML(c), L.latLng(c.pt), { kind: 'c', obj: c });
+  loadDetail(c).then(refreshPopup).catch(() => { });
+}
+document.addEventListener('click', e => {   // fase de captura: Leaflet corta la propagación dentro de los popups
+  const b = e.target.closest && e.target.closest('.leaflet-popup [data-act]'); if (!b) return;
+  e.preventDefault();
+  const c = concellos.get(+b.dataset.c);
+  if (b.dataset.act === 'zoomp') { const p = byId.get(+b.dataset.id); map.fitBounds(p.layer.getBounds(), { padding: [60, 60], maxZoom: 16 }); }
+  if (b.dataset.act === 'conc') showConcello(c, false);
+  if (b.dataset.act === 'fitc') map.fitBounds(c.bounds, { padding: [30, 30] });
+  if (b.dataset.act === 'only') { for (const x of concellos.values()) x.visible = x === c; applyVisibility(); syncConcChecks(); map.fitBounds(c.bounds, { padding: [30, 30] }); }
+}, true);
+
+// =================== Lista de concellos ===================
+function buildConcList() {
+  const box = $('concList'); box.innerHTML = '';
+  const list = [...concellos.values()].sort((a, b) => a.name.localeCompare(b.name, 'gl'));
+  for (const c of list) {
+    const row = document.createElement('div'); row.className = 'c'; row.dataset.code = c.code; row.dataset.k = norm(c.name);
+    row.innerHTML = `<label><input type="checkbox" ${c.visible ? 'checked' : ''}><span class="sw" style="background:${PAL[c.c8]}"></span><span class="nm">${esc(c.name)}</span> <span class="cnt">${c.parishes.length}</span></label>
+      <button class="go" data-a="go">Ir</button><button class="go" data-a="solo">Solo</button>`;
+    row.querySelector('input').onchange = e => { c.visible = e.target.checked; applyVisibility(); };
+    row.querySelector('[data-a=go]').onclick = () => showConcello(c);
+    row.querySelector('[data-a=solo]').onclick = () => { sheet(false); for (const x of concellos.values()) x.visible = x === c; applyVisibility(); syncConcChecks(); map.fitBounds(c.bounds, { padding: [30, 30] }); };
+    box.appendChild(row);
+  }
+}
+function syncConcChecks() { for (const row of $('concList').children) row.querySelector('input').checked = concellos.get(+row.dataset.code).visible; }
+$('concFilter').oninput = e => { const k = norm(e.target.value); for (const row of $('concList').children) row.style.display = !k || row.dataset.k.includes(k) ? '' : 'none'; };
+$('allOn').onclick = () => { for (const c of concellos.values()) c.visible = true; applyVisibility(); syncConcChecks(); };
+$('allOff').onclick = () => { for (const c of concellos.values()) c.visible = false; applyVisibility(); syncConcChecks(); };
+$('fitVisible').onclick = () => { const v = [...concellos.values()].filter(c => c.visible); if (v.length) map.fitBounds(v.reduce((b, c) => b.extend(c.bounds), L.latLngBounds(v[0].bounds.getSouthWest(), v[0].bounds.getNorthEast())), { padding: [20, 20] }); };
+
+// =================== Buscador ===================
+let index = [], hits = [], hitPos = -1;
+function buildSearchIndex() {
+  index = [];
+  for (const c of concellos.values()) index.push({ kind: 'c', obj: c, key: norm(c.name), name: c.name, extra: `${c.parishes.length} parroquias` });
+  for (const p of parishes) index.push({ kind: 'p', obj: p, key: norm(p.name + ' ' + p.adv + ' ' + p.full), nkey: norm(p.name), name: p.name + (p.adv ? ` (${p.adv})` : ''), extra: concellos.get(p.conc).name });
+}
+function highlight(text, toks) {
+  let t = esc(text);
+  for (const tk of toks) { if (!tk) continue; const nt = norm(text); const i = nt.indexOf(tk); if (i >= 0 && nt.length === text.length) { const raw = text.substr(i, tk.length); t = t.replace(esc(raw), '<mark>' + esc(raw) + '</mark>'); } }
+  return t;
+}
+function search(qs) {
+  const toks = norm(qs).split(' ').filter(Boolean); if (!toks.length) return [];
+  const out = [];
+  for (const e of index) {
+    if (!toks.every(t => e.key.includes(t) || norm(e.extra).includes(t))) continue;
+    const k = e.nkey || e.key, t0 = toks[0];
+    let s = k === t0 ? 0 : k.startsWith(t0) ? 1 : (' ' + k).includes(' ' + t0) ? 2 : 3;
+    if (e.kind === 'c') s -= 0.5;
+    out.push([s, e]);
+  }
+  out.sort((a, b) => a[0] - b[0] || a[1].name.localeCompare(b[1].name, 'gl'));
+  return out.slice(0, 60).map(x => x[1]);
+}
+function renderResults() {
+  const box = $('results'), qs = $('q').value;
+  $('qClear').style.display = qs ? 'block' : 'none';
+  if (!qs.trim()) { box.style.display = 'none'; return; }
+  if (!index.length) { box.innerHTML = '<div class="none">Espera a que terminen de cargar los datos…</div>'; box.style.display = 'block'; return; }
+  hits = search(qs); hitPos = hits.length ? 0 : -1;
+  const toks = norm(qs).split(' ');
+  box.innerHTML = hits.length ? hits.map((h, i) => `<div class="r${i === hitPos ? ' on' : ''}" data-i="${i}"><span class="t ${h.kind}">${h.kind === 'c' ? 'Concello' : 'Parroquia'}</span><span class="n">${highlight(h.name, toks)}</span><span class="d">${esc(h.extra)}</span></div>`).join('')
+    + (hits.length === 60 ? '<div class="none">Mostrando las 60 primeras coincidencias. Escribe más para afinar.</div>' : '')
+    : '<div class="none">Sin coincidencias. Prueba con otra parte del nombre.</div>';
+  box.style.display = 'block';
+}
+function pick(i) {
+  const h = hits[i]; if (!h) return;
+  $('results').style.display = 'none'; $('q').blur();
+  if (h.kind === 'c') showConcello(h.obj); else selectParish(h.obj, null, true);
+}
+$('q').addEventListener('input', renderResults);
+$('q').addEventListener('focus', () => { sheet(true); renderResults(); });
+$('q').addEventListener('keydown', e => {
+  const rows = $('results').querySelectorAll('.r');
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault(); if (!rows.length) return;
+    hitPos = (hitPos + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length;
+    rows.forEach((r, i) => r.classList.toggle('on', i === hitPos)); rows[hitPos].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') { e.preventDefault(); pick(hitPos); }
+  else if (e.key === 'Escape') { $('results').style.display = 'none'; }
+});
+$('results').addEventListener('mousedown', e => { const r = e.target.closest('.r'); if (r) { e.preventDefault(); pick(+r.dataset.i); } });
+$('q').addEventListener('blur', () => setTimeout(() => $('results').style.display = 'none', 150));
+$('qClear').onclick = () => { $('q').value = ''; renderResults(); $('q').focus(); };
+
+// =================== Controles ===================
+$('colorMode').onclick = e => { const b = e.target.closest('button'); if (!b) return; S.mode = b.dataset.m; [...$('colorMode').children].forEach(x => x.classList.toggle('on', x === b)); restyleAll(); };
+$('op').oninput = e => { S.opacity = e.target.value / 100; $('opV').textContent = e.target.value + '%'; for (const p of parishes) p.layer && p.layer.setStyle({ fillOpacity: S.opacity }); };
+$('names').onchange = e => { S.names = e.target.checked; updateLabels(); };
+$('baseSeg').onclick = e => { const b = e.target.closest('button'); if (b) setBase(b.dataset.b); };
+document.querySelectorAll('section > h3').forEach(h => h.onclick = () => h.parentElement.classList.toggle('fold'));
+$('closeSide').onclick = () => { $('side').classList.add('closed'); setTimeout(() => map.invalidateSize(), 250); };
+$('openSide').onclick = () => { $('side').classList.remove('closed'); setTimeout(() => map.invalidateSize(), 250); };
+// móvil: tocar o deslizar la cabecera abre/cierra el panel
+document.querySelector('.top').addEventListener('click', e => { if (MOBILE.matches && !e.target.closest('#searchBox, button')) $('side').classList.toggle('open'); });
+let y0 = null;
+document.querySelector('.top').addEventListener('touchstart', e => { y0 = e.touches[0].clientY; }, { passive: true });
+document.querySelector('.top').addEventListener('touchend', e => { if (y0 == null) return; const dy = e.changedTouches[0].clientY - y0; y0 = null; if (Math.abs(dy) > 30) sheet(dy < 0); }, { passive: true });
+map.on('click', () => sheet(false));
+// ayuda
+$('helpBtn').onclick = e => { e.stopPropagation(); $('help').classList.add('on'); };
+$('helpClose').onclick = () => { $('help').classList.remove('on'); try { localStorage.setItem('lugo-help', '1'); } catch { } };
+$('help').onclick = e => { if (e.target.id === 'help') $('helpClose').click(); };
+try { if (!localStorage.getItem('lugo-help')) $('help').classList.add('on'); } catch { }
+let lastZ = map.getZoom();
+map.on('zoomend', () => { const z = map.getZoom(); if ((z < 10) !== (lastZ < 10) || (z < 12) !== (lastZ < 12)) restyleAll(); lastZ = z; });
+map.on('moveend', () => { updateLabels(); maybeLoadDetail(); });
+map.on('popupclose', () => { popupTarget = null; });
+
+// =================== KML ===================
+function kmlColor(hex, a) { const h = hex.replace('#', ''); return a + h.slice(4, 6) + h.slice(2, 4) + h.slice(0, 2); }
+function kmlGeom(g) {
+  const ring = r => `<LinearRing><coordinates>${r.map(c => c[0].toFixed(6) + ',' + c[1].toFixed(6) + ',0').join(' ')}</coordinates></LinearRing>`;
+  const poly = rs => `<Polygon><outerBoundaryIs>${ring(rs[0])}</outerBoundaryIs>${rs.slice(1).map(r => `<innerBoundaryIs>${ring(r)}</innerBoundaryIs>`).join('')}</Polygon>`;
+  return g.type === 'Polygon' ? poly(g.coordinates) : `<MultiGeometry>${g.coordinates.map(poly).join('')}</MultiGeometry>`;
+}
+$('kml').onclick = async () => {
+  const vis = [...concellos.values()].filter(c => c.visible).sort((a, b) => a.name.localeCompare(b.name, 'gl'));
+  if (!vis.length) return setStatus('No hay ningún concello visible para exportar.', 'err');
+  try {
+    for (let i = 0; i < vis.length; i++) { setStatus(`Preparando KML con detalle máximo… (${i + 1}/${vis.length})`, '', Math.round(i / vis.length * 100)); await loadDetail(vis[i]); }
+  } catch (e) { return setStatus('No se pudo descargar el detalle para el KML (' + esc(e.message) + ').', 'err'); }
+  const pal = S.mode === 'superficie' ? ORANGE : PAL;
+  let k = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Parroquias de la provincia de Lugo</name>';
+  pal.forEach((c, i) => k += `<Style id="p${i}"><LineStyle><color>ffffffff</color><width>1.5</width></LineStyle><PolyStyle><color>${kmlColor(c, '80')}</color></PolyStyle></Style>`);
+  k += '<Style id="conc"><LineStyle><color>ff000000</color><width>3</width></LineStyle><PolyStyle><fill>0</fill></PolyStyle></Style>';
+  for (const c of vis) {
+    k += `<Folder><name>${esc(c.name)}</name>`;
+    if (c.geom) k += `<Placemark><name>Concello de ${esc(c.name)}</name><styleUrl>#conc</styleUrl>${kmlGeom(c.geom)}</Placemark>`;
+    for (const p of c.parishes) {
+      const idx = S.mode === 'superficie' ? p.cls : S.mode === 'concello' ? c.c8 : p.c8;
+      k += `<Placemark><name>${esc(p.full)}</name><description>Concello de ${esc(c.name)} · ${fmtKm2(p.exact ?? p.area)}</description><styleUrl>#p${idx}</styleUrl>${kmlGeom(p.geom)}</Placemark>`;
+    }
+    k += '</Folder>';
+  }
+  k += '</Document></kml>';
+  const url = URL.createObjectURL(new Blob([k], { type: 'application/vnd.google-earth.kml+xml' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: vis.length === 1 ? `parroquias_${norm(vis[0].name).replace(/\W+/g, '_')}.kml` : 'parroquias_lugo.kml' });
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+  setStatus(`KML descargado (${vis.length} concello${vis.length > 1 ? 's' : ''}).`, 'ok');
+};
+
+// =================== Arranque ===================
+async function start(force) {
+  try {
+    let data = force ? null : await cacheGet();
+    const fresh = data && Date.now() - data.ts < 30 * 864e5;
+    if (!fresh) {
+      setStatus('Descargando los límites oficiales de la Xunta (≈ 3 MB)…', '', 5);
+      data = await downloadProvince(f => setStatus('Descargando los límites oficiales de la Xunta (≈ 3 MB)…', '', Math.round(5 + f * 85)));
+      cachePut(data);
+    }
+    setStatus('Dibujando 1.271 parroquias…', '', 95);
+    await new Promise(r => setTimeout(r, 30));
+    build(data);
+    if (!start.fitted) { start.fitted = true; document.getElementById('fitVisible').click(); }
+    const d = new Date(data.ts).toLocaleDateString('es-ES');
+    setStatus(`✔ ${concellos.size} concellos y ${parishes.length} parroquias cargados${fresh ? ` (guardados el ${d})` : ''}. Pulsa una parroquia para ver su ficha.`, 'ok');
+    setTimeout(() => { if ($('status').classList.contains('ok')) setStatus(''); }, 9000);
+  } catch (e) {
+    console.error(e);
+    setStatus(`No se pudieron descargar los límites (${esc(e.message)}). Comprueba la conexión a internet y <a href="#" id="retry">vuelve a intentarlo</a>.`, 'err');
+    const r = $('retry'); if (r) r.onclick = ev => { ev.preventDefault(); start(true); };
+  }
+}
+$('reload').onclick = async () => { await cacheClear(); clearSelection(); start(true); };
+start();
+</script>
+</body>
+</html>
